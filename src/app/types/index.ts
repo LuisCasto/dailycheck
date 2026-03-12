@@ -7,6 +7,8 @@ export interface Habit {
   dailyTask: string;
   targetValue?: number;
   unit?: string;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  timesPerPeriod: number;
   createdAt: string;
 }
 
@@ -30,13 +32,13 @@ export type AppContextType = {
   habits: Habit[];
   logs: HabitLog[];
   isAuthenticated: boolean;
-  login: (email: string, name: string) => void;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  addHabit: (habit: Omit<Habit, 'id' | 'createdAt'>) => void;
-  updateHabit: (id: string, updates: Partial<Habit>) => void;
-  deleteHabit: (id: string) => void;
-  toggleLog: (habitId: string, date: string) => void;
-  addNote: (habitId: string, date: string, note: string) => void;
+  addHabit: (habit: Omit<Habit, 'id' | 'createdAt'>) => Promise<void>;
+  updateHabit: (id: string, updates: Partial<Habit>) => Promise<void>;
+  deleteHabit: (id: string) => Promise<void>;
+  toggleLog: (habitId: string, date: string) => Promise<void>;
+  addNote: (habitId: string, date: string, note: string) => Promise<void>;
   getLogsForDate: (date: string) => HabitLog[];
   getLogsForHabit: (habitId: string) => HabitLog[];
   getStreak: (habitId: string) => number;

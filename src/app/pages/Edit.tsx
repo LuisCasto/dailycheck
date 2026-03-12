@@ -15,6 +15,8 @@ const DEFAULT_FORM = {
   dailyTask: '',
   targetValue: undefined as number | undefined,
   unit: '',
+  frequency: 'daily' as 'daily' | 'weekly' | 'monthly',
+  timesPerPeriod: 1,
 };
 
 export default function Edit() {
@@ -50,26 +52,36 @@ export default function Edit() {
       dailyTask: h.dailyTask,
       targetValue: h.targetValue,
       unit: h.unit || '',
+      frequency: h.frequency,
+      timesPerPeriod: h.timesPerPeriod,
     });
     setEditingId(h.id);
     setErrors({});
     setShowForm(true);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
-    if (editingId) {
-      updateHabit(editingId, form);
-    } else {
-      addHabit(form);
+    try {
+      if (editingId) {
+        await updateHabit(editingId, form);
+      } else {
+        await addHabit(form);
+      }
+      setShowForm(false);
+      setEditingId(null);
+    } catch (err: any) {
+      setErrors({ general: err.message || 'Error al guardar' });
     }
-    setShowForm(false);
-    setEditingId(null);
   };
 
-  const handleDelete = (id: string) => {
-    deleteHabit(id);
-    setDeleteConfirm(null);
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteHabit(id);
+      setDeleteConfirm(null);
+    } catch (err: any) {
+      console.error('Error al eliminar:', err.message);
+    }
   };
 
   return (
@@ -241,6 +253,49 @@ export default function Edit() {
                     ))}
                   </div>
                 </div>
+                
+                {/* Frecuencia */}
+                <div>
+                  <label className="text-[#444] text-xs uppercase tracking-widest block mb-2">
+                    Frecuencia
+                  </label>
+                  <div className="flex gap-2 mb-3">
+                    {([
+                      { val: 'daily', label: 'Diario' },
+                      { val: 'weekly', label: 'Semanal' },
+                      { val: 'monthly', label: 'Mensual' },
+                    ] as const).map(({ val, label }) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setForm({ ...form, frequency: val })}
+                        className={`text-xs px-3 py-1.5 border transition-colors ${
+                          form.frequency === val
+                            ? 'border-white text-white'
+                            : 'border-[#222] text-[#444] hover:border-[#444]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {form.frequency !== 'daily' && (
+                    <div>
+                      <label className="text-[#444] text-xs uppercase tracking-widest block mb-2">
+                        Veces por {form.frequency === 'weekly' ? 'semana' : 'mes'}
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={form.frequency === 'weekly' ? 7 : 31}
+                        value={form.timesPerPeriod}
+                        onChange={(e) => setForm({ ...form, timesPerPeriod: parseInt(e.target.value) || 1 })}
+                        className="w-24 bg-[#0A0A0A] border border-[#222] text-white px-4 py-3 outline-none focus:border-[#444] transition-colors text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
 
                 {/* Daily task */}
                 <div>
@@ -279,6 +334,10 @@ export default function Edit() {
                   </div>
                 </div>
               </div>
+
+              {errors.general && (
+                <p className="text-red-500 text-xs mt-2">{errors.general}</p>
+              )}
 
               <div className="flex justify-end gap-3 mt-6">
                 <button onClick={() => setShowForm(false)} className="text-[#444] text-xs px-4 py-2.5 hover:text-white transition-colors">

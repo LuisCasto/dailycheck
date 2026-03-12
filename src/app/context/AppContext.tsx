@@ -1,236 +1,210 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Habit, HabitLog, User, AppContextType } from '../types';
-import { format, subDays, parseISO, differenceInDays } from 'date-fns';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { AppContextType, Habit, HabitLog, User } from '../types';
+import { format, subDays, differenceInDays, parseISO } from 'date-fns';
+import {
+  authApi, habitsApi, logsApi,
+  getToken, removeToken,
+  HabitResponse, LogResponse
+} from '../../lib/api';
 
 const AppContext = createContext<AppContextType | null>(null);
 
-const DEMO_HABITS: Habit[] = [
-  {
-    id: 'h1',
-    name: 'Lectura Diaria',
-    description: 'Volverme un lector habitual para expandir mi conocimiento',
-    category: 'Aprendizaje',
-    icon: '📚',
-    dailyTask: 'Leer 30 minutos',
-    targetValue: 30,
-    unit: 'min',
-    createdAt: format(subDays(new Date(), 35), 'yyyy-MM-dd'),
-  },
-  {
-    id: 'h2',
-    name: 'Ejercicio',
-    description: 'Mejorar mi condición física y salud general',
-    category: 'Salud',
-    icon: '🏃',
-    dailyTask: 'Entrenar 45 minutos',
-    targetValue: 45,
-    unit: 'min',
-    createdAt: format(subDays(new Date(), 35), 'yyyy-MM-dd'),
-  },
-  {
-    id: 'h3',
-    name: 'Meditación',
-    description: 'Cultivar la atención plena y reducir el estrés',
-    category: 'Bienestar',
-    icon: '🧘',
-    dailyTask: 'Meditar 10 minutos',
-    targetValue: 10,
-    unit: 'min',
-    createdAt: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
-  },
-  {
-    id: 'h4',
-    name: 'Coding',
-    description: 'Mejorar mis habilidades de programación',
-    category: 'Aprendizaje',
-    icon: '💻',
-    dailyTask: 'Programar 1 hora',
-    targetValue: 60,
-    unit: 'min',
-    createdAt: format(subDays(new Date(), 28), 'yyyy-MM-dd'),
-  },
-  {
-    id: 'h5',
-    name: 'Español Avanzado',
-    description: 'Perfeccionar mi escritura y vocabulario en español',
-    category: 'Idiomas',
-    icon: '✍️',
-    dailyTask: 'Escribir 300 palabras',
-    targetValue: 300,
-    unit: 'palabras',
-    createdAt: format(subDays(new Date(), 20), 'yyyy-MM-dd'),
-  },
-];
-
-function generateDemoLogs(habits: Habit[]): HabitLog[] {
-  const logs: HabitLog[] = [];
-  const today = new Date();
-
-  habits.forEach((habit) => {
-    const daysBack = differenceInDays(today, parseISO(habit.createdAt));
-    const days = Math.min(daysBack, 30);
-
-    for (let i = days; i >= 1; i--) {
-      const date = format(subDays(today, i), 'yyyy-MM-dd');
-      let completionChance = 0.7;
-      if (habit.id === 'h1') completionChance = 0.82;
-      if (habit.id === 'h2') completionChance = 0.65;
-      if (habit.id === 'h3') completionChance = 0.88;
-      if (habit.id === 'h4') completionChance = 0.72;
-      if (habit.id === 'h5') completionChance = 0.6;
-
-      const completed = Math.random() < completionChance;
-      if (completed) {
-        logs.push({
-          id: `log-${habit.id}-${date}`,
-          habitId: habit.id,
-          date,
-          completed: true,
-          loggedAt: date + 'T20:00:00',
-        });
-      }
-    }
-  });
-
-  return logs;
+// ── Converters ──────────────────────────────────────────────
+function habitFromApi(h: HabitResponse): Habit {
+  return {
+    id: h.id,
+    name: h.name,
+    description: h.description,
+    category: h.category,
+    icon: h.icon,
+    dailyTask: h.daily_task,
+    targetValue: h.target_value ?? undefined,
+    unit: h.unit ?? undefined,
+    frequency: h.frequency,
+    timesPerPeriod: h.times_per_period,
+    createdAt: h.created_at.split('T')[0],
+  };
 }
 
-const DEMO_LOGS = generateDemoLogs(DEMO_HABITS);
+function logFromApi(l: LogResponse): HabitLog {
+  return {
+    id: l.id,
+    habitId: l.habit_id,
+    date: l.date,
+    completed: l.completed,
+    note: l.note ?? undefined,
+    loggedAt: l.logged_at,
+  };
+}
 
+// ── Provider ─────────────────────────────────────────────────
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem('dailycheck_user');
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [logs, setLogs] = useState<HabitLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [habits, setHabits] = useState<Habit[]>(() => {
-    const stored = localStorage.getItem('dailycheck_habits');
-    return stored ? JSON.parse(stored) : DEMO_HABITS;
-  });
-
-  const [logs, setLogs] = useState<HabitLog[]>(() => {
-    const stored = localStorage.getItem('dailycheck_logs');
-    return stored ? JSON.parse(stored) : DEMO_LOGS;
-  });
-
+  // Al arrancar, si hay token, carga el usuario y sus datos
   useEffect(() => {
-    localStorage.setItem('dailycheck_user', JSON.stringify(user));
-  }, [user]);
+    const init = async () => {
+      if (!getToken()) { setLoading(false); return; }
+      try {
+        const me = await authApi.me();
+        setUser({ id: me.id, name: me.name, email: me.email });
+        const [apiHabits, apiLogs] = await Promise.all([
+          habitsApi.getAll(),
+          logsApi.getAll(),
+        ]);
+        setHabits(apiHabits.map(habitFromApi));
+        setLogs(apiLogs.map(logFromApi));
+      } catch {
+        removeToken();
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem('dailycheck_habits', JSON.stringify(habits));
-  }, [habits]);
-
-  useEffect(() => {
-    localStorage.setItem('dailycheck_logs', JSON.stringify(logs));
-  }, [logs]);
-
-  const login = (email: string, name: string) => {
-    const newUser: User = { id: 'u1', name, email };
-    setUser(newUser);
+  const login = async (email: string, password: string) => {
+    await authApi.login(email, password);
+    const me = await authApi.me();
+    setUser({ id: me.id, name: me.name, email: me.email });
+    const [apiHabits, apiLogs] = await Promise.all([
+      habitsApi.getAll(),
+      logsApi.getAll(),
+    ]);
+    setHabits(apiHabits.map(habitFromApi));
+    setLogs(apiLogs.map(logFromApi));
   };
 
   const logout = () => {
+    removeToken();
     setUser(null);
+    setHabits([]);
+    setLogs([]);
   };
 
-  const addHabit = (habit: Omit<Habit, 'id' | 'createdAt'>) => {
-    const newHabit: Habit = {
-      ...habit,
-      id: `h-${Date.now()}`,
-      createdAt: format(new Date(), 'yyyy-MM-dd'),
+  const addHabit = async (habit: Omit<Habit, 'id' | 'createdAt'>) => {
+    const created = await habitsApi.create({
+      name: habit.name,
+      description: habit.description,
+      category: habit.category,
+      icon: habit.icon,
+      daily_task: habit.dailyTask,
+      target_value: habit.targetValue,
+      unit: habit.unit,
+      frequency: habit.frequency,
+      times_per_period: habit.timesPerPeriod,
+    });
+    setHabits(prev => [...prev, habitFromApi(created)]);
+  };
+
+  const updateHabit = async (id: string, updates: Partial<Habit>) => {
+    const updated = await habitsApi.update(id, {
+      name: updates.name,
+      description: updates.description,
+      category: updates.category,
+      icon: updates.icon,
+      daily_task: updates.dailyTask,
+      target_value: updates.targetValue,
+      unit: updates.unit,
+      frequency: updates.frequency,
+      times_per_period: updates.timesPerPeriod,
+    });
+    setHabits(prev => prev.map(h => h.id === id ? habitFromApi(updated) : h));
+  };
+
+    const deleteHabit = async (id: string) => {
+      await habitsApi.delete(id);
+      setHabits(prev => prev.filter(h => h.id !== id));
+      setLogs(prev => prev.filter(l => l.habitId !== id));
     };
-    setHabits((prev) => [...prev, newHabit]);
-  };
 
-  const updateHabit = (id: string, updates: Partial<Habit>) => {
-    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
-  };
-
-  const deleteHabit = (id: string) => {
-    setHabits((prev) => prev.filter((h) => h.id !== id));
-    setLogs((prev) => prev.filter((l) => l.habitId !== id));
-  };
-
-  const toggleLog = (habitId: string, date: string) => {
-    const existing = logs.find((l) => l.habitId === habitId && l.date === date);
+  const toggleLog = async (habitId: string, date: string) => {
+    const existing = logs.find(l => l.habitId === habitId && l.date === date);
     if (existing) {
-      setLogs((prev) => prev.filter((l) => !(l.habitId === habitId && l.date === date)));
+      // Toggle off — elimina localmente, la API devuelve 200 con detail
+      await logsApi.toggle(habitId, date);
+      setLogs(prev => prev.filter(l => !(l.habitId === habitId && l.date === date)));
     } else {
-      const newLog: HabitLog = {
-        id: `log-${habitId}-${date}-${Date.now()}`,
-        habitId,
-        date,
-        completed: true,
-        loggedAt: new Date().toISOString(),
-      };
-      setLogs((prev) => [...prev, newLog]);
+      // Toggle on — crea el log
+      const created = await logsApi.toggle(habitId, date);
+      if (created) {
+        setLogs(prev => [...prev, logFromApi(created)]);
+      }
     }
   };
 
-  const addNote = (habitId: string, date: string, note: string) => {
-    setLogs((prev) =>
-      prev.map((l) => (l.habitId === habitId && l.date === date ? { ...l, note } : l))
+  const addNote = async (habitId: string, date: string, note: string) => {
+    const log = logs.find(l => l.habitId === habitId && l.date === date);
+    if (!log) return;
+    await logsApi.updateNote(log.id, note);
+    setLogs(prev =>
+      prev.map(l => l.habitId === habitId && l.date === date ? { ...l, note } : l)
     );
   };
 
-  const getLogsForDate = (date: string) => logs.filter((l) => l.date === date && l.completed);
+  // ── Stats (calculadas localmente igual que antes) ──────────
+  const getLogsForDate = useCallback(
+    (date: string) => logs.filter(l => l.date === date && l.completed),
+    [logs]
+  );
 
-  const getLogsForHabit = (habitId: string) =>
-    logs.filter((l) => l.habitId === habitId && l.completed);
+  const getLogsForHabit = useCallback(
+    (habitId: string) => logs.filter(l => l.habitId === habitId && l.completed),
+    [logs]
+  );
 
-  const getStreak = (habitId: string): number => {
+  const getStreak = useCallback((habitId: string): number => {
     let streak = 0;
     const today = new Date();
     for (let i = 0; i < 365; i++) {
       const date = format(subDays(today, i), 'yyyy-MM-dd');
-      const hasLog = logs.some((l) => l.habitId === habitId && l.date === date && l.completed);
-      if (hasLog) {
-        streak++;
-      } else {
-        if (i > 0) break;
-      }
+      const hasLog = logs.some(l => l.habitId === habitId && l.date === date && l.completed);
+      if (hasLog) { streak++; }
+      else if (i > 0) { break; }
     }
     return streak;
-  };
+  }, [logs]);
 
-  const getCompletionRate = (habitId: string, days = 30): number => {
+  const getCompletionRate = useCallback((habitId: string, days = 30): number => {
     const today = new Date();
     let completed = 0;
-    const habit = habits.find((h) => h.id === habitId);
+    const habit = habits.find(h => h.id === habitId);
     if (!habit) return 0;
     const startDay = differenceInDays(today, parseISO(habit.createdAt));
     const actualDays = Math.min(days, startDay);
     if (actualDays === 0) return 0;
     for (let i = 1; i <= actualDays; i++) {
       const date = format(subDays(today, i), 'yyyy-MM-dd');
-      if (logs.some((l) => l.habitId === habitId && l.date === date && l.completed)) {
+      if (logs.some(l => l.habitId === habitId && l.date === date && l.completed)) {
         completed++;
       }
     }
     return Math.round((completed / actualDays) * 100);
-  };
+  }, [logs, habits]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <div className="text-[#444] text-xs uppercase tracking-widest animate-pulse">
+          Cargando...
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <AppContext.Provider
-      value={{
-        user,
-        habits,
-        logs,
-        isAuthenticated: !!user,
-        login,
-        logout,
-        addHabit,
-        updateHabit,
-        deleteHabit,
-        toggleLog,
-        addNote,
-        getLogsForDate,
-        getLogsForHabit,
-        getStreak,
-        getCompletionRate,
-      }}
-    >
+    <AppContext.Provider value={{
+      user, habits, logs,
+      isAuthenticated: !!user,
+      login, logout,
+      addHabit, updateHabit, deleteHabit,
+      toggleLog, addNote,
+      getLogsForDate, getLogsForHabit,
+      getStreak, getCompletionRate,
+    }}>
       {children}
     </AppContext.Provider>
   );

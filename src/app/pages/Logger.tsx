@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, subDays, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { startOfWeek, startOfMonth, endOfWeek, endOfMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight, CheckCircle2, Circle, MessageSquare, X, Check } from 'lucide-react';
 
 export default function Logger() {
@@ -10,13 +11,16 @@ export default function Logger() {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [noteModal, setNoteModal] = useState<{ habitId: string; habitName: string } | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [logError, setLogError] = useState<string | null>(null);
 
   const dayLogs = getLogsForDate(selectedDate);
   const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
   const isFuture = selectedDate > format(new Date(), 'yyyy-MM-dd');
 
   const navigate = (dir: 'prev' | 'next') => {
-    const d = dir === 'prev' ? subDays(new Date(selectedDate), 1) : addDays(new Date(selectedDate), 1);
+    setLogError(null);
+    const current = new Date(selectedDate + 'T12:00:00'); // ← fuerza mediodía local
+    const d = dir === 'prev' ? subDays(current, 1) : addDays(current, 1);
     setSelectedDate(format(d, 'yyyy-MM-dd'));
   };
 
@@ -37,6 +41,30 @@ export default function Logger() {
     }
   };
 
+  const getLogsInPeriod = (habitId: string, date: Date, frequency: string): number => {
+    if (frequency === 'daily') return 0;
+    
+    let periodStart: Date;
+    let periodEnd: Date;
+
+    if (frequency === 'weekly') {
+      periodStart = startOfWeek(date, { weekStartsOn: 1 }); // lunes
+      periodEnd = endOfWeek(date, { weekStartsOn: 1 });
+    } else {
+      periodStart = startOfMonth(date);
+      periodEnd = endOfMonth(date);
+    }
+
+    const startStr = format(periodStart, 'yyyy-MM-dd');
+    const endStr = format(periodEnd, 'yyyy-MM-dd');
+
+    return logs.filter(
+      l => l.habitId === habitId &&
+      l.completed &&
+      l.date >= startStr &&
+      l.date <= endStr
+    ).length;
+  };
   const completedCount = dayLogs.length;
   const totalCount = habits.length;
 
@@ -93,10 +121,26 @@ export default function Logger() {
         </div>
       )}
 
+
+      {/* Error message */}
+      {logError && (
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          className="bg-red-900/20 border border-red-800 text-red-400 text-xs px-4 py-3 mb-4"
+        >
+          {logError}
+        </motion.div>
+      )}
+
       {/* Habit cards */}
       <div className="space-y-3">
         {habits.map((habit, i) => {
-          const done = dayLogs.some((l) => l.habitId === habit.id);
+          const logsInPeriod = getLogsInPeriod(habit.id, new Date(selectedDate + 'T12:00:00'), habit.frequency);
+          const done = habit.frequency === 'daily'
+            ? dayLogs.some(l => l.habitId === habit.id)
+            : logsInPeriod >= habit.timesPerPeriod;
           const existingLog = logs.find((l) => l.habitId === habit.id && l.date === selectedDate);
 
           return (
@@ -112,8 +156,15 @@ export default function Logger() {
               <div className="flex items-center gap-4 p-5">
                 {/* Check button */}
                 <button
-                  onClick={() => !isFuture && toggleLog(habit.id, selectedDate)}
-                  disabled={isFuture}
+                  onClick={async () => {
+                    if (isFuture) return;
+                    setLogError(null);
+                    try {
+                      await toggleLog(habit.id, selectedDate);
+                    } catch (err: any) {
+                      setLogError(err.message || 'Error al registrar el hábito');
+                    }
+                  }}
                   className={`flex-shrink-0 transition-all duration-300 ${isFuture ? 'cursor-not-allowed opacity-30' : 'hover:scale-110'}`}
                 >
                   <AnimatePresence mode="wait">

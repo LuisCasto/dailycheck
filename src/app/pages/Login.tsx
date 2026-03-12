@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { motion } from 'motion/react';
 import { CheckCircle2, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { authApi, statsApi } from '../../lib/api';
+
 
 type Mode = 'login' | 'register';
 
@@ -14,25 +16,38 @@ export default function Login() {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [userCount, setUserCount] = useState<number>(0);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (!form.email || !form.password) {
-      setError('Por favor completa todos los campos.');
-      return;
+  useEffect(() => {
+    statsApi.getPublicStats()
+      .then(data => setUserCount(data.total_users))
+      .catch(() => {});
+  }, []);
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError('');
+  if (!form.email || !form.password) {
+    setError('Por favor completa todos los campos.');
+    return;
+  }
+  if (mode === 'register' && !form.name) {
+    setError('Por favor ingresa tu nombre.');
+    return;
+  }
+  setLoading(true);
+  try {
+    if (mode === 'register') {
+      await authApi.register(form.name, form.email, form.password);
     }
-    if (mode === 'register' && !form.name) {
-      setError('Por favor ingresa tu nombre.');
-      return;
-    }
-    setLoading(true);
-    setTimeout(() => {
-      login(form.email, form.name || form.email.split('@')[0]);
-      navigate('/dashboard');
-      setLoading(false);
-    }, 900);
-  };
+    await login(form.email, form.password);
+    navigate('/dashboard');
+  } catch (err: any) {
+    setError(err.message || 'Error al iniciar sesión');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] flex">
@@ -50,18 +65,20 @@ export default function Login() {
             transition={{ duration: 0.8, delay: 0.2 }}
           >
             <h1 className="text-white text-5xl mb-6 leading-tight">
-              La disciplina es
+              Un logger 
               <br />
-              <span className="text-[#22C55E]">elegir</span> entre
+              <span className="text-[#22C55E]">gratis</span> para todos.
               <br />
-              lo que quieres
+              Ya que actuar es 
               <br />
-              ahora y lo que
+              el lenguaje
               <br />
-              quieres <span className="text-[#22C55E]">más.</span>
+              del <span className="text-[#22C55E]">cambio.</span>
             </h1>
             <p className="text-[#555] max-w-sm">
-              Convierte tus metas grandes en pasos pequeños. Mide tu progreso. Construye hábitos que duren.
+              Aquí puedes registrar hábitos que haces diariamente, o los que quieres lograr hacer.
+              Un día me descargue una app para hacer esto y era una basura, así que hice esto, y es gratis.
+
             </p>
           </motion.div>
 
@@ -73,9 +90,7 @@ export default function Login() {
             className="mt-12 flex gap-8"
           >
             {[
-              { label: 'Hábitos activos', val: '12,480' },
-              { label: 'Días logrados', val: '892K' },
-              { label: 'Rachas activas', val: '3,200+' },
+              { label: 'Usuarios actuales', val: userCount.toLocaleString() },
             ].map((s) => (
               <div key={s.label}>
                 <div className="text-white text-xl">{s.val}</div>
@@ -193,23 +208,6 @@ export default function Login() {
               className="text-[#444] text-xs hover:text-white transition-colors"
             >
               {mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
-            </button>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-[#1A1A1A]">
-            <p className="text-[#333] text-xs text-center mb-3">Demo rápida</p>
-            <button
-              onClick={() => {
-                setLoading(true);
-                setTimeout(() => {
-                  login('demo@dailycheck.app', 'Demo User');
-                  navigate('/dashboard');
-                  setLoading(false);
-                }, 600);
-              }}
-              className="w-full border border-[#222] text-[#555] py-3 text-xs uppercase tracking-widest hover:border-[#444] hover:text-[#888] transition-colors"
-            >
-              Entrar como invitado
             </button>
           </div>
         </motion.div>
