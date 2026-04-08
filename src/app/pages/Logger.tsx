@@ -174,13 +174,12 @@ export default function Logger() {
               <div className="flex items-center gap-4 p-5">
                 {/* Check button */}
                 <button
-                  <button
-                    onClick={() => handleToggle(habit.id, selectedDate)}
-                    disabled={isFuture || loadingHabits.has(habit.id)}
-                    className={`flex-shrink-0 transition-all duration-300 ${
-                      isFuture || loadingHabits.has(habit.id) ? 'cursor-not-allowed opacity-30' : 'hover:scale-110'
-                    }`}
-                  >
+                  onClick={() => handleToggle(habit.id, selectedDate)}
+                  disabled={isFuture || loadingHabits.has(habit.id)}
+                  className={`flex-shrink-0 transition-all duration-300 ${
+                    isFuture || loadingHabits.has(habit.id) ? 'cursor-not-allowed opacity-30' : 'hover:scale-110'
+                  }`}
+                >
                   <AnimatePresence mode="wait">
                     {done ? (
                       <motion.div
