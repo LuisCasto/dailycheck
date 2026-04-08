@@ -12,6 +12,7 @@ export default function Logger() {
   const [noteModal, setNoteModal] = useState<{ habitId: string; habitName: string } | null>(null);
   const [noteText, setNoteText] = useState('');
   const [logError, setLogError] = useState<string | null>(null);
+  const [loadingHabits, setLoadingHabits] = useState<Set<string>>(new Set());
 
   const dayLogs = getLogsForDate(selectedDate);
   const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
@@ -67,6 +68,23 @@ export default function Logger() {
   };
   const completedCount = dayLogs.length;
   const totalCount = habits.length;
+
+  const handleToggle = async (habitId: string, date: string) => {
+  if (loadingHabits.has(habitId)) return; // evita doble click
+  
+  setLoadingHabits(prev => new Set(prev).add(habitId));
+  try {
+    await toggleLog(habitId, date);
+  } catch (e) {
+    // manejo de error existente
+  } finally {
+    setLoadingHabits(prev => {
+      const next = new Set(prev);
+      next.delete(habitId);
+      return next;
+    });
+  }
+};
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -156,17 +174,13 @@ export default function Logger() {
               <div className="flex items-center gap-4 p-5">
                 {/* Check button */}
                 <button
-                  onClick={async () => {
-                    if (isFuture) return;
-                    setLogError(null);
-                    try {
-                      await toggleLog(habit.id, selectedDate);
-                    } catch (err: any) {
-                      setLogError(err.message || 'Error al registrar el hábito');
-                    }
-                  }}
-                  className={`flex-shrink-0 transition-all duration-300 ${isFuture ? 'cursor-not-allowed opacity-30' : 'hover:scale-110'}`}
-                >
+                  <button
+                    onClick={() => handleToggle(habit.id, selectedDate)}
+                    disabled={isFuture || loadingHabits.has(habit.id)}
+                    className={`flex-shrink-0 transition-all duration-300 ${
+                      isFuture || loadingHabits.has(habit.id) ? 'cursor-not-allowed opacity-30' : 'hover:scale-110'
+                    }`}
+                  >
                   <AnimatePresence mode="wait">
                     {done ? (
                       <motion.div
