@@ -12,7 +12,7 @@ export default function Logger() {
   const [noteModal, setNoteModal] = useState<{ habitId: string; habitName: string } | null>(null);
   const [noteText, setNoteText] = useState('');
   const [logError, setLogError] = useState<string | null>(null);
-  const [loadingHabits, setLoadingHabits] = useState<Set<string>>(new Set());
+  const [pendingHabits, setPendingHabits] = useState<Set<string>>(new Set());
 
   const dayLogs = getLogsForDate(selectedDate);
   const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
@@ -70,21 +70,20 @@ export default function Logger() {
   const totalCount = habits.length;
 
   const handleToggle = async (habitId: string, date: string) => {
-  if (loadingHabits.has(habitId)) return; // evita doble click
-  
-  setLoadingHabits(prev => new Set(prev).add(habitId));
-  try {
-    await toggleLog(habitId, date);
-  } catch (e) {
-    // manejo de error existente
-  } finally {
-    setLoadingHabits(prev => {
-      const next = new Set(prev);
-      next.delete(habitId);
-      return next;
-    });
-  }
-};
+    if (pendingHabits.has(habitId)) return;
+    setPendingHabits(prev => new Set(prev).add(habitId));
+    try {
+      await toggleLog(habitId, date);
+    } catch (e) {
+      setLogError('No se pudo guardar. Intenta de nuevo.');
+    } finally {
+      setPendingHabits(prev => {
+        const next = new Set(prev);
+        next.delete(habitId);
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -175,9 +174,9 @@ export default function Logger() {
                 {/* Check button */}
                 <button
                   onClick={() => handleToggle(habit.id, selectedDate)}
-                  disabled={isFuture || loadingHabits.has(habit.id)}
+                  disabled={isFuture || pendingHabits.has(habit.id)}
                   className={`flex-shrink-0 transition-all duration-300 ${
-                    isFuture || loadingHabits.has(habit.id) ? 'cursor-not-allowed opacity-30' : 'hover:scale-110'
+                    isFuture || pendingHabits.has(habit.id) ? 'cursor-not-allowed' : 'hover:scale-110'
                   }`}
                 >
                   <AnimatePresence mode="wait">

@@ -122,19 +122,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
   const toggleLog = async (habitId: string, date: string) => {
-    const existing = logs.find(l => l.habitId === habitId && l.date === date);
-    if (existing) {
-      // Toggle off — elimina localmente, la API devuelve 200 con detail
-      await logsApi.toggle(habitId, date);
-      setLogs(prev => prev.filter(l => !(l.habitId === habitId && l.date === date)));
-    } else {
-      // Toggle on — crea el log
-      const created = await logsApi.toggle(habitId, date);
-      if (created) {
-        setLogs(prev => [...prev, logFromApi(created)]);
+      const existing = logs.find(l => l.habitId === habitId && l.date === date);
+
+      // Optimistic update
+      if (existing) {
+        setLogs(prev => prev.filter(l => !(l.habitId === habitId && l.date === date)));
+      } else {
+        const tempLog: HabitLog = {
+          id: `temp-${habitId}-${date}`,
+          habitId,
+          date,
+          completed: true,
+          loggedAt: new Date().toISOString(),
+        };
+        setLogs(prev => [...prev, tempLog]);
       }
-    }
-  };
+
+      try {
+        const result = await logsApi.toggle(habitId, date);
+        if (!existing && result) {
+          // Reemplaza el log temporal con el real
+          setLogs(prev => prev.map(l =>
+            l.id === `temp-${habitId}-${date}` ? logFromApi(result) : l
+          ));
+        }
+      } catch (e) {
+        // Revertir
+        if (existing) {
+          setLogs(prev => [...prev, existing]);
+        } else {
+          setLogs(prev => prev.filter(l => l.id !== `temp-${habitId}-${date}`));
+        }
+        throw e;
+      }
+    };
 
   const addNote = async (habitId: string, date: string, note: string) => {
     const log = logs.find(l => l.habitId === habitId && l.date === date);
