@@ -37,9 +37,8 @@ export default function Contact() {
 
           <div className="space-y-4">
             {[
-              { icon: Mail, label: 'Email', val: 'hola@dailycheck.app' },
-              { icon: Github, label: 'GitHub', val: '@dailycheck' },
-              { icon: Twitter, label: 'Twitter', val: '@dailycheckapp' },
+              { icon: Mail, label: 'Email', val: 'axel290es@gmail.com' },
+              { icon: Github, label: 'GitHub', val: '@luiscasto' },
             ].map(({ icon: Icon, label, val }) => (
               <div key={label} className="flex items-center gap-3">
                 <div className="w-8 h-8 border border-[#1E1E1E] flex items-center justify-center flex-shrink-0">
